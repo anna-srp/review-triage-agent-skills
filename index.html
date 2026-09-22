@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Review Triage — 150 reviews, 5 seconds, one digital employee</title>
-<meta name="description" content="Watch a ZooWork digital employee triage 150 customer reviews in ~5 seconds with Jev, the System One decision model. Real run, real latencies, real cost.">
+<meta name="description" content="A messy pile of 150 customer reviews, sorted by a ZooWork digital employee in seconds with Jev System One decisions — replies drafted automatically. Real run, real latencies, real cost.">
 <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
@@ -12,27 +12,24 @@
 
   <header class="hero">
     <p class="kicker">ZooWork agent × Jev (System One decisions)</p>
-    <h1><span class="h-num">150</span> reviews.<br><span class="h-accent" id="hero-seconds">5.3</span> seconds.</h1>
-    <p class="sub">This digital employee triages a whole night of customer reviews before you finish reading
-    this sentence. Real run, real latencies, real cost — decided by Jev, drafted by LLM, run on ZooWork.</p>
-    <div class="hero-cta">
-      <button id="run-demo" class="btn btn-primary">▶ Replay the run</button>
-      <a class="btn btn-ghost" href="#live">Triage your own — live</a>
-    </div>
+    <h1>Monday morning.<br><span class="h-accent">150 unread reviews.</span></h1>
+    <p class="sub">Every online business knows this pile. Watch a digital employee clear it in seconds —
+    every decision made by Jev with a confidence score, every reply drafted and ready.
+    Real run, real latencies, real cost.</p>
   </header>
 
   <section class="machine-region" id="machine-region">
     <div class="ticker-row">
       <div class="ticker">
         <p class="ticker-num"><span id="t-count">0</span><span class="ticker-denom">/150</span></p>
-        <p class="ticker-label">reviews triaged</p>
+        <p class="ticker-label">triaged</p>
       </div>
       <div class="ticker">
-        <p class="ticker-num"><span id="t-latency">296</span><span class="ticker-unit">ms</span></p>
-        <p class="ticker-label">median decision latency</p>
+        <p class="ticker-num"><span id="t-latency">—</span><span class="ticker-unit">ms</span></p>
+        <p class="ticker-label">median decision</p>
       </div>
       <div class="ticker">
-        <p class="ticker-num">$<span id="t-cost">0.0039</span></p>
+        <p class="ticker-num">$<span id="t-cost">0.0000</span></p>
         <p class="ticker-label">whole run, Jev pricing</p>
       </div>
       <div class="ticker ticker-alert">
@@ -41,33 +38,38 @@
       </div>
     </div>
 
-    <div class="feedline"><div class="feed-chip" id="feed-chip"></div></div>
-
-    <div class="lanes">
-      <div class="lane" data-lane="respond">
-        <header><span class="lane-dot dot-respond"></span> Respond <b id="c-respond">0</b></header>
-        <div class="lane-stack" id="lane-respond"></div>
+    <div class="board" id="board">
+      <div class="pile-stage" id="pile-stage">
+        <button id="run-btn" class="btn btn-primary btn-run">▶ Sort this mess</button>
       </div>
-      <div class="lane" data-lane="escalate">
-        <header><span class="lane-dot dot-escalate"></span> Escalate <b id="c-escalate">0</b></header>
-        <div class="lane-stack" id="lane-escalate"></div>
-      </div>
-      <div class="lane" data-lane="private">
-        <header><span class="lane-dot dot-private"></span> Private <b id="c-private">0</b></header>
-        <div class="lane-stack" id="lane-private"></div>
-      </div>
-      <div class="lane" data-lane="ignore">
-        <header><span class="lane-dot dot-ignore"></span> Ignore <b id="c-ignore">0</b></header>
-        <div class="lane-stack" id="lane-ignore"></div>
+      <div class="bins" id="bins" hidden>
+        <div class="bin" data-bin="respond">
+          <header><span class="lane-dot dot-respond"></span> Respond <span class="bin-hint">reply drafted</span> <b id="c-respond">0</b></header>
+          <div class="bin-grid" id="bin-respond"></div>
+        </div>
+        <div class="bin" data-bin="escalate">
+          <header><span class="lane-dot dot-escalate"></span> Escalate <span class="bin-hint">humans only</span> <b id="c-escalate">0</b></header>
+          <div class="bin-grid" id="bin-escalate"></div>
+        </div>
+        <div class="bin-row">
+          <div class="bin bin-small" data-bin="private">
+            <header><span class="lane-dot dot-private"></span> Private <b id="c-private">0</b></header>
+            <div class="bin-grid" id="bin-private"></div>
+          </div>
+          <div class="bin bin-small" data-bin="ignore">
+            <header><span class="lane-dot dot-ignore"></span> Ignore <b id="c-ignore">0</b></header>
+            <div class="bin-grid" id="bin-ignore"></div>
+          </div>
+        </div>
       </div>
     </div>
-    <p class="machine-note">Replay of a real production run — 150 reviews through <code>jev-1.13.0</code>, ten in flight at a time,
-    played back at actual wall-clock speed. Hover any card for the decision detail.</p>
+    <p class="machine-note" id="machine-note">A real production run — 150 reviews through <code>jev-1.13.0</code>, replies drafted by the agent
+    on ZooWork Agent Runtime. <b>Click any review</b> to see its decision and the reply that's already written.</p>
   </section>
 
   <section id="live" class="live-region">
     <h2>Your reviews. Same machine. Right now.</h2>
-    <p class="live-note">Paste up to 5 reviews, one per line. Each gets a live System One decision — sub-second, with confidence.</p>
+    <p class="live-note">Paste up to 5 reviews, one per line. Each gets a live Jev decision — sub-second, with confidence.</p>
     <div class="live-box">
       <textarea id="live-input" rows="3" maxlength="2500"
         placeholder="Waited an hour and my order was wrong.&#10;Best carbonara in the city — ask for Gio's table."></textarea>
@@ -109,12 +111,20 @@ My additional requirements: [add changes here, or leave as none].</pre>
   <footer class="foot">
     <p>Run stats are from one production batch: 150 reviews × 3 schema questions each through TypeSafe's
     <code>jev-1.13.0</code> (median 296 ms, p90 407 ms, 92,961 input tokens ≈ $0.0039 at $0.042/M).
-    Reply drafting, escalation briefings, and digests run as a persistent agent on ZooWork Agent Runtime.
-    Safety, legal, and discrimination matters always escalate to a human.</p>
+    Replies and internal notes were drafted by the agent's reply-drafting skill on ZooWork Agent Runtime.
+    Safety, legal, and discrimination matters always escalate to a human — no reply is auto-posted for them.</p>
     <p>Built with the ZooWork SDK in Codex/Claude Code · <a href="https://zoowork.ai" rel="noopener">zoowork.ai</a></p>
   </footer>
 
 </main>
+
+<div class="modal-backdrop" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <button class="modal-close" id="modal-close" aria-label="Close">×</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

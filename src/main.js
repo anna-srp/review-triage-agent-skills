@@ -1,100 +1,213 @@
 import baked from './baked-150.json'
 
-// ---- replay machine ----
-const laneOf = (action) =>
-  action === 'escalate' ? 'escalate'
-  : action === 'respond-privately' ? 'private'
-  : action === 'ignore' ? 'ignore'
-  : 'respond'
+const $ = (id) => document.getElementById(id)
+const laneOf = (a) =>
+  a === 'escalate' ? 'escalate' : a === 'respond-privately' ? 'private' : a === 'ignore' ? 'ignore' : 'respond'
+const stars = (n) => '★'.repeat(n ?? 0)
 
-const el = (id) => document.getElementById(id)
-const lanes = { respond: el('lane-respond'), escalate: el('lane-escalate'), private: el('lane-private'), ignore: el('lane-ignore') }
-const counters = { respond: el('c-respond'), escalate: el('c-escalate'), private: el('c-private'), ignore: el('c-ignore') }
-const tick = { count: el('t-count'), latency: el('t-latency'), cost: el('t-cost'), escalated: el('t-escalated') }
-const feedChip = el('feed-chip')
-const LANE_CAP = { respond: 14, escalate: 12, private: 6, ignore: 6 }
-const CHIP_COLOR = { respond: '#2a78d6', escalate: '#e34948', private: '#1baf7a', ignore: '#85858e' }
-
-function stars(n) { return '★'.repeat(n ?? 0) }
-
-function chip(d, lane) {
-  const c = document.createElement('div')
-  c.className = `chip ${lane}`
-  c.dataset.tip = `${d.action} (${(d.action_conf ?? 0).toFixed(2)})${d.tone ? ` · ${d.tone}` : ''} · ${d.priority} · ${d.latency_ms}ms — “${d.text}”`
-  c.innerHTML = `<span class="stars">${stars(d.stars)}</span><span class="txt">${d.text}</span><span class="conf">${(d.action_conf ?? 0).toFixed(2)}</span>`
-  return c
+// ---- deterministic pixel avatar (8x8 mirrored, seeded by id) ----
+const SKIN = ['#f2c9a0', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a5694f']
+const HAIR = ['#2d2d2d', '#5a3825', '#b55239', '#e8c25a', '#7a7a7a', '#3b2a55', '#1d4d8f', '#207a4b']
+const SHIRT = ['#2a78d6', '#1baf7a', '#eda100', '#e34948', '#6b5bd2', '#d55181', '#1f8a99', '#75746f']
+function seeded(str) {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507)
+    h = Math.imul(h ^ (h >>> 13), 3266489909)
+    return ((h ^= h >>> 16) >>> 0) / 4294967296
+  }
+}
+function avatarURL(id) {
+  const rnd = seeded(id)
+  const skin = SKIN[(rnd() * SKIN.length) | 0]
+  const hair = HAIR[(rnd() * HAIR.length) | 0]
+  const shirt = SHIRT[(rnd() * SHIRT.length) | 0]
+  const hairTop = 1 + ((rnd() * 2) | 0)          // hair depth
+  const hasSide = rnd() > 0.4
+  const eyeRow = 3 + ((rnd() * 2) | 0)
+  const c = document.createElement('canvas')
+  c.width = 8; c.height = 8
+  const x = c.getContext('2d')
+  x.fillStyle = '#eceae2'; x.fillRect(0, 0, 8, 8)
+  // head 2..5 cols mirrored via symmetric draw
+  for (let row = 1; row <= 5; row++) for (let col = 2; col <= 5; col++) { x.fillStyle = skin; x.fillRect(col, row, 1, 1) }
+  // hair
+  for (let row = 0; row < hairTop; row++) for (let col = 2; col <= 5; col++) { x.fillStyle = hair; x.fillRect(col, row, 1, 1) }
+  if (hasSide) { x.fillStyle = hair; x.fillRect(1, 1, 1, 2); x.fillRect(6, 1, 1, 2) }
+  // eyes
+  x.fillStyle = '#1c1c1e'; x.fillRect(3, eyeRow, 1, 1); x.fillRect(5 - 1, eyeRow, 1, 1)
+  // shirt
+  x.fillStyle = shirt
+  for (let col = 1; col <= 6; col++) x.fillRect(col, 6, 1, 1)
+  for (let col = 0; col <= 7; col++) x.fillRect(col, 7, 1, 1)
+  return c.toDataURL()
 }
 
-let running = false
-async function replay() {
-  if (running) return
-  running = true
-  for (const k of Object.keys(lanes)) { lanes[k].innerHTML = ''; counters[k].textContent = '0' }
-  const laneCount = { respond: 0, escalate: 0, private: 0, ignore: 0 }
-  const overflow = { respond: null, escalate: null, private: null, ignore: null }
-  let done = 0
-  let escalated = 0
-  let costSoFar = 0
-  const t0 = performance.now()
+// ---- board setup: messy pile ----
+const board = $('board')
+const pileStage = $('pile-stage')
+const bins = $('bins')
+const counters = { respond: $('c-respond'), escalate: $('c-escalate'), private: $('c-private'), ignore: $('c-ignore') }
+const tick = { count: $('t-count'), latency: $('t-latency'), cost: $('t-cost'), escalated: $('t-escalated') }
 
-  // playback: 10 concurrent → effective inter-arrival ≈ latency/10. Use real latencies.
-  for (const d of baked) {
-    const lane = laneOf(d.action)
-    // feed chip flies across
-    feedChip.textContent = `${stars(d.stars)} ${d.text.slice(0, 60)}`
-    feedChip.style.background = CHIP_COLOR[lane]
-    feedChip.style.setProperty('--fly-ms', '200ms')
-    feedChip.classList.remove('fly'); void feedChip.offsetWidth; feedChip.classList.add('fly')
+const notes = []
+function buildPile() {
+  const W = board.clientWidth
+  const H = board.clientHeight
+  baked.forEach((d, i) => {
+    const rnd = seeded(d.id + 'pos')
+    const note = document.createElement('button')
+    note.type = 'button'
+    note.className = 'note'
+    note.dataset.idx = String(i)
+    const av = avatarURL(d.id)
+    note.innerHTML = `
+      <img class="avatar" src="${av}" width="26" height="26" alt="">
+      <span class="n-body">
+        <span class="n-stars">${stars(d.stars)}</span>
+        <span class="n-text">${d.text}</span>
+      </span>
+      <span class="n-badge"></span>`
+    const x = 8 + rnd() * (W - 190)
+    const y = 8 + rnd() * (H - 90)
+    const rot = (rnd() - 0.5) * 22
+    note.style.left = `${x}px`
+    note.style.top = `${y}px`
+    note.style.transform = `rotate(${rot}deg)`
+    note.style.zIndex = String(3 + ((rnd() * 10) | 0))
+    note.dataset.avatar = av
+    note.addEventListener('click', () => openModal(i))
+    pileStage.appendChild(note)
+    notes.push(note)
+  })
+}
 
-    laneCount[lane] += 1
-    if (laneCount[lane] <= LANE_CAP[lane]) {
-      lanes[lane].appendChild(chip(d, lane))
-    } else {
-      if (!overflow[lane]) {
-        overflow[lane] = document.createElement('div')
-        overflow[lane].className = 'chip more'
-        lanes[lane].appendChild(overflow[lane])
-      }
-      overflow[lane].textContent = `+ ${laneCount[lane] - LANE_CAP[lane]} more`
+// ---- sort animation: FLIP each note into its bin slot ----
+let sorted = false
+async function runSort() {
+  if (sorted) return
+  sorted = true
+  $('run-btn').style.display = 'none'
+  bins.hidden = false
+  requestAnimationFrame(() => bins.classList.add('show'))
+
+  const grids = { respond: $('bin-respond'), escalate: $('bin-escalate'), private: $('bin-private'), ignore: $('bin-ignore') }
+  const CAP = { respond: 21, escalate: 15, private: 3, ignore: 4 }
+  const placed = { respond: 0, escalate: 0, private: 0, ignore: 0 }
+  const total = { respond: 0, escalate: 0, private: 0, ignore: 0 }
+  let done = 0, escalated = 0, cost = 0
+  const boardRect = board.getBoundingClientRect()
+
+  function slotXY(lane) {
+    const grid = grids[lane].getBoundingClientRect()
+    const noteW = 150, noteH = 44, gap = 5
+    const cols = Math.max(1, Math.floor(grid.width / (noteW + gap)))
+    const k = placed[lane]
+    const col = k % cols
+    const row = (k / cols) | 0
+    return {
+      x: grid.left - boardRect.left + col * (noteW + gap),
+      y: grid.top - boardRect.top + row * (noteH + gap),
+      overflow: (row + 1) * (noteH + gap) > grid.height - noteH,
     }
-    counters[lane].textContent = String(laneCount[lane])
+  }
+
+  for (let i = 0; i < baked.length; i++) {
+    const d = baked[i]
+    const lane = laneOf(d.action)
+    const note = notes[i]
+    total[lane] += 1
+    counters[lane].textContent = String(total[lane])
+
+    const badge = note.querySelector('.n-badge')
+    badge.textContent = d.action === 'respond-privately' ? 'private' : d.action.replace('respond-publicly', 'respond')
+    badge.className = `n-badge ${lane}`
+    note.classList.add('sorted', `is-${lane}`)
+
+    if (placed[lane] < CAP[lane]) {
+      const { x, y } = slotXY(lane)
+      placed[lane] += 1
+      note.style.transition = 'left .5s cubic-bezier(.2,.85,.3,1), top .5s cubic-bezier(.2,.85,.3,1), transform .5s ease'
+      note.style.left = `${x}px`
+      note.style.top = `${y}px`
+      note.style.transform = 'rotate(0deg)'
+      note.style.zIndex = '6'
+    } else {
+      // fade into the bin's counter instead of overflowing
+      const grid = grids[lane].getBoundingClientRect()
+      note.style.transition = 'left .45s ease, top .45s ease, transform .45s ease, opacity .4s ease .15s'
+      note.style.left = `${grid.left - boardRect.left + grid.width / 2 - 70}px`
+      note.style.top = `${grid.top - boardRect.top + grid.height - 50}px`
+      note.style.transform = 'rotate(0deg) scale(.5)'
+      note.style.opacity = '0'
+      setTimeout(() => { note.style.display = 'none' }, 700)
+    }
 
     done += 1
     if (lane === 'escalate') escalated += 1
-    costSoFar += (d.input_tokens ?? 620) / 1e6 * 0.042
+    cost += (d.input_tokens ?? 620) / 1e6 * 0.042
     tick.count.textContent = String(done)
     tick.escalated.textContent = String(escalated)
-    tick.cost.textContent = costSoFar.toFixed(4)
+    tick.cost.textContent = cost.toFixed(4)
     tick.latency.textContent = String(d.latency_ms ?? 296)
 
-    // real pacing: median 296ms latency ÷ 10 concurrent ≈ 30ms between arrivals
-    await new Promise((r) => setTimeout(r, 26 + Math.random() * 14))
+    await new Promise((r) => setTimeout(r, 30))
   }
   tick.latency.textContent = '296'
-  const secs = ((performance.now() - t0) / 1000).toFixed(1)
-  const hero = el('hero-seconds')
-  if (hero) hero.textContent = secs
-  running = false
+  $('machine-note').innerHTML = 'Sorted. <b>Click any review</b> — the ones in <span style="color:var(--c-respond);font-weight:700">Respond</span> already have their reply written by the agent. <span style="color:var(--c-escalate);font-weight:700">Escalate</span> is waiting for a human, on purpose.'
 }
 
-el('run-demo').addEventListener('click', () => {
-  el('machine-region').scrollIntoView({ behavior: 'smooth', block: 'start' })
-  setTimeout(replay, 350)
-})
+$('run-btn').addEventListener('click', runSort)
 
-const observer = new IntersectionObserver((entries) => {
-  if (entries.some((e) => e.isIntersecting)) {
-    observer.disconnect()
-    replay()
-  }
-}, { threshold: 0.3 })
-observer.observe(el('machine-region'))
+// ---- modal ----
+const modal = $('modal')
+const modalBody = $('modal-body')
+function openModal(i) {
+  const d = baked[i]
+  const lane = laneOf(d.action)
+  const isReply = !!d.reply
+  modalBody.innerHTML = `
+    <div class="m-head">
+      <img class="avatar" src="${notes[i].dataset.avatar}" width="44" height="44" alt="">
+      <div>
+        <div class="m-stars">${stars(d.stars)}</div>
+        <div class="m-platform">${d.platform} review</div>
+      </div>
+    </div>
+    <div class="m-review">“${d.text}”</div>
+    <div class="m-decision">
+      <span class="badge ${lane}">${d.action}</span>
+      ${d.tone ? `<span class="badge plain">${d.tone}</span>` : ''}
+      <span class="badge plain">${d.priority}</span>
+      <span class="badge plain">conf ${(d.action_conf ?? 0).toFixed(2)}</span>
+    </div>
+    <div class="m-latency">decided by ${d.model ?? 'jev-1.13.0'} in ${d.latency_ms}ms</div>
+    ${isReply ? `
+      <div class="m-reply-label"><span class="dot-ok"></span> ${d.action === 'respond-privately' ? 'Private reply — drafted & sent' : 'Public reply — drafted & posted'}</div>
+      <div class="m-reply">${d.reply}</div>
+      <div class="m-posted">✓ auto-handled by the agent · gesture cap $10 respected</div>
+    ` : `
+      <div class="m-reply-label">${lane === 'escalate' ? 'Internal note — a human owns this' : 'Internal note — logged, no reply'}</div>
+      <div class="m-reply ${lane === 'escalate' ? 'is-note' : 'is-ignore'}">${d.note ?? ''}</div>
+      ${lane === 'escalate' ? '<div class="m-posted" style="color:var(--c-escalate)">⚠ never auto-replied — safety, legal & conduct always go to a person</div>' : ''}
+    `}`
+  modal.hidden = false
+  document.body.style.overflow = 'hidden'
+}
+function closeModal() { modal.hidden = true; document.body.style.overflow = '' }
+$('modal-close').addEventListener('click', closeModal)
+modal.addEventListener('click', (e) => { if (e.target === modal) closeModal() })
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal.hidden) closeModal() })
+
+// build pile once layout is ready
+requestAnimationFrame(buildPile)
 
 // ---- live triage ----
-const liveRun = el('live-run')
-const liveInput = el('live-input')
-const liveStatus = el('live-status')
-const liveOutput = el('live-output')
+const liveRun = $('live-run')
+const liveInput = $('live-input')
+const liveStatus = $('live-status')
+const liveOutput = $('live-output')
 
 function resultRow(d) {
   const lane = laneOf(d.action)
@@ -142,20 +255,20 @@ liveRun.addEventListener('click', async () => {
         const evt = JSON.parse(line.slice(6))
         if (evt.type === 'status') liveStatus.textContent = evt.message
         if (evt.type === 'decision') liveOutput.appendChild(resultRow(evt.decision))
-        if (evt.type === 'done') liveStatus.textContent = `${evt.count} decision(s) · median ${evt.median_ms}ms · ${evt.source}`
+        if (evt.type === 'done') liveStatus.textContent = `${evt.count} decision(s) · median ${evt.median_ms ?? '—'}ms · ${evt.source}`
         if (evt.type === 'error') liveStatus.textContent = evt.message
       }
     }
   } catch {
-    liveStatus.textContent = 'Busy right now — the replay above is a real run; try again in a minute.'
+    liveStatus.textContent = 'Busy right now — the board above is a real run; try again in a minute.'
   } finally {
     liveRun.disabled = false
   }
 })
 
 // copy prompt
-el('copy-prompt').addEventListener('click', async (e) => {
-  await navigator.clipboard.writeText(el('fork-prompt').textContent)
+$('copy-prompt').addEventListener('click', async (e) => {
+  await navigator.clipboard.writeText($('fork-prompt').textContent)
   e.target.textContent = 'Copied ✓'
   setTimeout(() => { e.target.textContent = 'Copy prompt' }, 1600)
 })
