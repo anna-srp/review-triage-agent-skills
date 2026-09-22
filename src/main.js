@@ -1,143 +1,116 @@
-import baked from './baked-triage.json'
+import baked from './baked-150.json'
 
-const reviewById = Object.fromEntries(baked.reviews.map((r) => [r.id, r]))
-const decisions = baked.decisions
+// ---- replay machine ----
+const laneOf = (action) =>
+  action === 'escalate' ? 'escalate'
+  : action === 'respond-privately' ? 'private'
+  : action === 'ignore' ? 'ignore'
+  : 'respond'
 
-const stream = document.getElementById('stream')
-const stat = {
-  decisions: document.getElementById('stat-decisions'),
-  reviews: document.getElementById('stat-reviews'),
-  time: document.getElementById('stat-time'),
-  cost: document.getElementById('stat-cost'),
-  escalated: document.getElementById('stat-escalated'),
-}
+const el = (id) => document.getElementById(id)
+const lanes = { respond: el('lane-respond'), escalate: el('lane-escalate'), private: el('lane-private'), ignore: el('lane-ignore') }
+const counters = { respond: el('c-respond'), escalate: el('c-escalate'), private: el('c-private'), ignore: el('c-ignore') }
+const tick = { count: el('t-count'), latency: el('t-latency'), cost: el('t-cost'), escalated: el('t-escalated') }
+const feedChip = el('feed-chip')
+const LANE_CAP = { respond: 14, escalate: 12, private: 6, ignore: 6 }
+const CHIP_COLOR = { respond: '#2a78d6', escalate: '#e34948', private: '#1baf7a', ignore: '#85858e' }
 
-function stars(n) { return '★'.repeat(n) + '☆'.repeat(5 - n) }
-function actionClass(a) {
-  if (a === 'escalate') return 'escalate'
-  if (a === 'ignore') return 'ignore'
-  return 'respond'
-}
+function stars(n) { return '★'.repeat(n ?? 0) }
 
-function card(review, d) {
-  const el = document.createElement('article')
-  el.className = `card ${actionClass(d.action)}`
-  const conf = Math.round((d.action_conf ?? 0) * 100)
-  el.innerHTML = `
-    <div class="card-meta">
-      <p class="card-stars">${stars(review.stars)}</p>
-      <p class="card-platform">${review.platform}</p>
-    </div>
-    <div class="card-body">
-      <p>&ldquo;${review.text}&rdquo;</p>
-      <p class="card-reason">${d.reason ?? ''}</p>
-    </div>
-    <div class="card-decision">
-      <div class="badges">
-        <span class="badge badge-action ${actionClass(d.action)}">${d.action}</span>
-        ${d.tone ? `<span class="badge badge-tone">${d.tone}</span>` : ''}
-        <span class="badge badge-priority ${d.priority}">${d.priority}</span>
-      </div>
-      <div class="conf">
-        <div class="conf-track"><div class="conf-fill" data-w="${conf}"></div></div>
-        <span class="conf-num">${(d.action_conf ?? 0).toFixed(2)}</span>
-      </div>
-    </div>`
-  return el
-}
-
-function countUp(el, target, ms, decimals = 0) {
-  const start = performance.now()
-  function tick(now) {
-    const p = Math.min(1, (now - start) / ms)
-    const eased = 1 - (1 - p) ** 3
-    el.textContent = (target * eased).toFixed(decimals)
-    if (p < 1) requestAnimationFrame(tick)
-  }
-  requestAnimationFrame(tick)
+function chip(d, lane) {
+  const c = document.createElement('div')
+  c.className = `chip ${lane}`
+  c.dataset.tip = `${d.action} (${(d.action_conf ?? 0).toFixed(2)})${d.tone ? ` · ${d.tone}` : ''} · ${d.priority} · ${d.latency_ms}ms — “${d.text}”`
+  c.innerHTML = `<span class="stars">${stars(d.stars)}</span><span class="txt">${d.text}</span><span class="conf">${(d.action_conf ?? 0).toFixed(2)}</span>`
+  return c
 }
 
 let running = false
-async function runStream() {
+async function replay() {
   if (running) return
   running = true
-  stream.innerHTML = ''
-  stat.reviews.textContent = String(decisions.length)
-  const t0 = performance.now()
-  let made = 0
+  for (const k of Object.keys(lanes)) { lanes[k].innerHTML = ''; counters[k].textContent = '0' }
+  const laneCount = { respond: 0, escalate: 0, private: 0, ignore: 0 }
+  const overflow = { respond: null, escalate: null, private: null, ignore: null }
+  let done = 0
   let escalated = 0
+  let costSoFar = 0
+  const t0 = performance.now()
 
-  for (const d of decisions) {
-    const review = reviewById[d.id]
-    if (!review) continue
-    const el = card(review, d)
-    stream.appendChild(el)
-    requestAnimationFrame(() => {
-      const fill = el.querySelector('.conf-fill')
-      if (fill) fill.style.width = `${fill.dataset.w}%`
-    })
-    made += d.tone ? 4 : 3
-    if (d.action === 'escalate') escalated += 1
-    stat.decisions.textContent = String(made)
-    stat.escalated.textContent = String(escalated)
-    stat.time.textContent = ((performance.now() - t0) / 1000).toFixed(1)
-    // System One pacing: decisions land fast
-    await new Promise((r) => setTimeout(r, 240 + Math.random() * 160))
+  // playback: 10 concurrent → effective inter-arrival ≈ latency/10. Use real latencies.
+  for (const d of baked) {
+    const lane = laneOf(d.action)
+    // feed chip flies across
+    feedChip.textContent = `${stars(d.stars)} ${d.text.slice(0, 60)}`
+    feedChip.style.background = CHIP_COLOR[lane]
+    feedChip.style.setProperty('--fly-ms', '200ms')
+    feedChip.classList.remove('fly'); void feedChip.offsetWidth; feedChip.classList.add('fly')
+
+    laneCount[lane] += 1
+    if (laneCount[lane] <= LANE_CAP[lane]) {
+      lanes[lane].appendChild(chip(d, lane))
+    } else {
+      if (!overflow[lane]) {
+        overflow[lane] = document.createElement('div')
+        overflow[lane].className = 'chip more'
+        lanes[lane].appendChild(overflow[lane])
+      }
+      overflow[lane].textContent = `+ ${laneCount[lane] - LANE_CAP[lane]} more`
+    }
+    counters[lane].textContent = String(laneCount[lane])
+
+    done += 1
+    if (lane === 'escalate') escalated += 1
+    costSoFar += (d.input_tokens ?? 620) / 1e6 * 0.042
+    tick.count.textContent = String(done)
+    tick.escalated.textContent = String(escalated)
+    tick.cost.textContent = costSoFar.toFixed(4)
+    tick.latency.textContent = String(d.latency_ms ?? 296)
+
+    // real pacing: median 296ms latency ÷ 10 concurrent ≈ 30ms between arrivals
+    await new Promise((r) => setTimeout(r, 26 + Math.random() * 14))
   }
-  stat.time.textContent = ((performance.now() - t0) / 1000).toFixed(1)
-  countUp(stat.cost, 0.001, 400, 3)
+  tick.latency.textContent = '296'
+  const secs = ((performance.now() - t0) / 1000).toFixed(1)
+  const hero = el('hero-seconds')
+  if (hero) hero.textContent = secs
   running = false
 }
 
-document.getElementById('run-demo').addEventListener('click', () => {
-  document.querySelector('.stream-region').scrollIntoView({ behavior: 'smooth', block: 'start' })
-  runStream()
+el('run-demo').addEventListener('click', () => {
+  el('machine-region').scrollIntoView({ behavior: 'smooth', block: 'start' })
+  setTimeout(replay, 350)
 })
 
-// auto-run once when the stream scrolls into view
 const observer = new IntersectionObserver((entries) => {
   if (entries.some((e) => e.isIntersecting)) {
     observer.disconnect()
-    runStream()
+    replay()
   }
-}, { threshold: 0.25 })
-observer.observe(document.querySelector('.stream-region'))
+}, { threshold: 0.3 })
+observer.observe(el('machine-region'))
 
 // ---- live triage ----
-const liveRun = document.getElementById('live-run')
-const liveInput = document.getElementById('live-input')
-const liveStatus = document.getElementById('live-status')
-const liveOutput = document.getElementById('live-output')
+const liveRun = el('live-run')
+const liveInput = el('live-input')
+const liveStatus = el('live-status')
+const liveOutput = el('live-output')
 
-function liveCard(d) {
-  const el = document.createElement('article')
-  el.className = `card ${actionClass(d.action)}`
-  const conf = Math.round((d.action_conf ?? 0) * 100)
-  el.innerHTML = `
-    <div class="card-meta">
-      <p class="card-stars">${d.stars ? stars(d.stars) : '—'}</p>
-      <p class="card-platform">yours</p>
+function resultRow(d) {
+  const lane = laneOf(d.action)
+  const row = document.createElement('article')
+  row.className = `result-row ${lane}`
+  row.innerHTML = `
+    <div>
+      <p class="result-text">“${(d.text ?? '').slice(0, 200)}”</p>
+      <p class="result-meta">${d.latency_ms != null ? `decided in ${d.latency_ms}ms · ` : ''}confidence ${(d.action_conf ?? 0).toFixed(2)} · ${d.source ?? ''}</p>
     </div>
-    <div class="card-body">
-      <p>&ldquo;${(d.text ?? '').slice(0, 220)}&rdquo;</p>
-      <p class="card-reason">${d.reason ?? ''}</p>
-    </div>
-    <div class="card-decision">
-      <div class="badges">
-        <span class="badge badge-action ${actionClass(d.action)}">${d.action}</span>
-        ${d.tone ? `<span class="badge badge-tone">${d.tone}</span>` : ''}
-        <span class="badge badge-priority ${d.priority}">${d.priority}</span>
-      </div>
-      <div class="conf">
-        <div class="conf-track"><div class="conf-fill" data-w="${conf}"></div></div>
-        <span class="conf-num">${(d.action_conf ?? 0).toFixed(2)}</span>
-      </div>
+    <div class="result-badges">
+      <span class="badge ${lane}">${d.action}</span>
+      ${d.tone ? `<span class="badge plain">${d.tone}</span>` : ''}
+      <span class="badge plain">${d.priority ?? ''}</span>
     </div>`
-  requestAnimationFrame(() => {
-    const fill = el.querySelector('.conf-fill')
-    if (fill) fill.style.width = `${fill.dataset.w}%`
-  })
-  return el
+  return row
 }
 
 liveRun.addEventListener('click', async () => {
@@ -145,17 +118,14 @@ liveRun.addEventListener('click', async () => {
   if (!lines.length) { liveStatus.textContent = 'Paste at least one review first.'; return }
   liveRun.disabled = true
   liveOutput.innerHTML = ''
-  liveStatus.textContent = 'Opening a private session on ZooWork Agent Runtime…'
+  liveStatus.textContent = 'Deciding…'
   try {
     const res = await fetch('/api/triage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reviews: lines }),
     })
-    if (res.status === 429) {
-      liveStatus.textContent = 'This browser hit its hourly limit — fork the repo to run unlimited.'
-      return
-    }
+    if (res.status === 429) { liveStatus.textContent = 'Hourly limit reached — fork the repo to run unlimited.'; return }
     if (!res.ok || !res.body) throw new Error('bad response')
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
@@ -171,22 +141,21 @@ liveRun.addEventListener('click', async () => {
         if (!line) continue
         const evt = JSON.parse(line.slice(6))
         if (evt.type === 'status') liveStatus.textContent = evt.message
-        if (evt.type === 'decision') liveOutput.appendChild(liveCard(evt.decision))
-        if (evt.type === 'done') liveStatus.textContent = `Done — ${evt.count} review(s) triaged on the live agent.`
+        if (evt.type === 'decision') liveOutput.appendChild(resultRow(evt.decision))
+        if (evt.type === 'done') liveStatus.textContent = `${evt.count} decision(s) · median ${evt.median_ms}ms · ${evt.source}`
         if (evt.type === 'error') liveStatus.textContent = evt.message
       }
     }
   } catch {
-    liveStatus.textContent = 'The live agent is busy right now — the replay above is a real run; try again in a minute.'
+    liveStatus.textContent = 'Busy right now — the replay above is a real run; try again in a minute.'
   } finally {
     liveRun.disabled = false
   }
 })
 
 // copy prompt
-document.getElementById('copy-prompt').addEventListener('click', async (e) => {
-  const text = document.getElementById('fork-prompt').textContent
-  await navigator.clipboard.writeText(text)
+el('copy-prompt').addEventListener('click', async (e) => {
+  await navigator.clipboard.writeText(el('fork-prompt').textContent)
   e.target.textContent = 'Copied ✓'
   setTimeout(() => { e.target.textContent = 'Copy prompt' }, 1600)
 })
