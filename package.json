@@ -5,10 +5,16 @@
   "scripts": {
     "deploy": "node scripts/provision.mjs",
     "verify": "node scripts/verify.mjs",
-    "setup": "npm run deploy && npm run verify"
+    "setup": "npm run deploy && npm run verify",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@zoowork-ai/sdk": "0.7.0"
   },
-  "description": "Skill pack for a System One review-triage digital employee on ZooWork Agent Runtime"
+  "description": "Skill pack for a System One review-triage digital employee on ZooWork Agent Runtime",
+  "devDependencies": {
+    "vite": "^7.1.11"
+  }
 }

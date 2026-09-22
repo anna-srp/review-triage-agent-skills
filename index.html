@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review Triage — a System One digital employee on ZooWork</title>
+<meta name="description" content="Watch an AI digital employee triage a night of customer reviews in seconds — schema decisions with confidence scores, not free-form text. Built on ZooWork Agent Runtime.">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<main class="wrap">
+
+  <header class="hero">
+    <p class="kicker">A ZooWork demo · inspired by the System One decision pattern</p>
+    <h1>Decisions are not<br>text generation.</h1>
+    <p class="sub">A digital employee makes thousands of small calls a day. This one triages customer
+    reviews the System One way — every decision picked from a fixed schema, scored with confidence,
+    in milliseconds. The LLM only writes when writing is the job.</p>
+    <div class="hero-cta">
+      <button id="run-demo" class="btn btn-primary">▶ Run the triage stream</button>
+      <a class="btn btn-ghost" href="#live">Try it with your own reviews</a>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Run statistics">
+    <div class="tile">
+      <p class="tile-label">Decisions made</p>
+      <p class="tile-value"><span id="stat-decisions">0</span></p>
+      <p class="tile-foot">4 fields × <span id="stat-reviews">0</span> reviews</p>
+    </div>
+    <div class="tile">
+      <p class="tile-label">Stream time</p>
+      <p class="tile-value"><span id="stat-time">0.0</span><span class="tile-unit">s</span></p>
+      <p class="tile-foot">this replay, wall clock</p>
+    </div>
+    <div class="tile">
+      <p class="tile-label">Decision cost at Jev-class pricing</p>
+      <p class="tile-value">&lt;$<span id="stat-cost">0.001</span></p>
+      <p class="tile-foot">at $0.042 / M input tokens*</p>
+    </div>
+    <div class="tile tile-alert">
+      <p class="tile-label">Escalated to a human</p>
+      <p class="tile-value"><span id="stat-escalated">0</span></p>
+      <p class="tile-foot">safety &amp; legal never auto-replied</p>
+    </div>
+  </section>
+
+  <section class="stream-region">
+    <div class="stream-head">
+      <h2>Friday night, 12 reviews, one shift manager who never sleeps</h2>
+      <p class="stream-note">Replay of a real triage run by this agent on ZooWork Agent Runtime.
+      Every decision below was made by the agent against its declared schema — nothing is staged.</p>
+    </div>
+    <div id="stream" class="stream" aria-live="polite"></div>
+  </section>
+
+  <section id="live" class="live-region">
+    <h2>Now feed it your own</h2>
+    <p class="live-note">Paste one review per line (up to 5). A private session of the live agent
+    triages them on ZooWork Agent Runtime — emulated System One mode, same schema, same contract.
+    Plug in a Jev-style endpoint and only the latency changes.</p>
+    <div class="live-box">
+      <textarea id="live-input" rows="4" maxlength="2500"
+        placeholder="2 stars — Waited forever and my order was wrong.&#10;5 stars — Best carbonara in the city, ask for Gio's table."></textarea>
+      <div class="live-controls">
+        <button id="live-run" class="btn btn-primary">Triage my reviews</button>
+        <span id="live-status" class="live-status"></span>
+      </div>
+      <div id="live-output" class="live-output" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="fork-region">
+    <h2>Fork this digital employee</h2>
+    <p>The whole agent — schema, skills, deploy scripts, this page — is one public repo.
+    Paste this into Codex or Claude Code and it builds, verifies, and ships your own copy
+    on ZooWork Agent Runtime.</p>
+    <div class="prompt-card">
+      <button id="copy-prompt" class="btn btn-copy">Copy prompt</button>
+      <pre id="fork-prompt">Build, verify, and publicly deploy the English-language United States Review Triage Agent using this public Skill Pack:
+https://github.com/anna-srp/review-triage-agent-skills
+
+Open or download the repository. Read its README.md, PROMPT.md, Agent Persona, and all four Skills, and treat them as the source of truth. Install and follow ZooWork's official development Skill.
+
+When you need my ZooWork API key, ask once and configure it as ZOOWORK_API_KEY for this local project. Keep it out of source code, browser code, logs, and Git. Never print the key back to me.
+
+Create or reuse one persistent Review Triage Agent, attach its four Skills, start it on ZooWork Agent Runtime, and run the repository's bounded emulated-mode verification on the checked-in sample reviews. Preserve its decision-schema, confidence-threshold, and escalation boundaries.
+
+After verification passes, reuse the same Agent and build a lightweight, original public UI shaped like a review inbox: a paste-reviews box, example reviews, a triage-results table showing action, tone, compensation, priority, confidence, and one-line reason per review, buttons to draft the reply or escalation briefing for a selected review, a streaming conversation/results view, loading and error states, and New conversation. Keep the API key and Agent ID server-side, create a separate ZooWork Session for each visitor or conversation, keep the public MVP text-only with no live platform connections, and add a basic usage limit. Publish it with a suitable hosting provider and return the public URL.
+
+Finish by reporting the running Agent status, attached Skills, verification result, public URL, and UI test result. Do not stop at a plan or Markdown report.
+
+My additional requirements: [add changes here, or leave as none].</pre>
+    </div>
+    <div class="foot-cta">
+      <a class="btn btn-primary" href="https://zoowork.ai/?utm_source=demo&utm_medium=web&utm_campaign=review-triage-jev" rel="noopener">Build yours on ZooWork</a>
+      <a class="btn btn-ghost" href="https://github.com/anna-srp/review-triage-agent-skills" rel="noopener">View the Skill Pack</a>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>*Decision-cost figure uses TypeSafe Jev's published pricing ($0.042 per million input tokens) applied to this
+    run's decision inputs; the replay above was produced by the agent's emulated System One mode on ZooWork Agent
+    Runtime. Escalation, compensation-cap, and confidence-threshold rules are part of the agent's declared contract.</p>
+    <p>Built with the ZooWork SDK in Codex/Claude Code · <a href="https://zoowork.ai" rel="noopener">zoowork.ai</a></p>
+  </footer>
+
+</main>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
