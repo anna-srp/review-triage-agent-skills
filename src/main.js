@@ -93,23 +93,30 @@ async function runSort() {
   requestAnimationFrame(() => bins.classList.add('show'))
 
   const grids = { respond: $('bin-respond'), escalate: $('bin-escalate'), private: $('bin-private'), ignore: $('bin-ignore') }
-  const CAP = { respond: 21, escalate: 15, private: 3, ignore: 4 }
   const placed = { respond: 0, escalate: 0, private: 0, ignore: 0 }
   const total = { respond: 0, escalate: 0, private: 0, ignore: 0 }
   let done = 0, escalated = 0, cost = 0
   const boardRect = board.getBoundingClientRect()
 
-  function slotXY(lane) {
+  // measure real sorted-note size once, then size each bin's grid capacity from its actual box
+  const NOTE_W = 148, NOTE_H = 78, GAP = 6
+  const layout = {}
+  for (const lane of Object.keys(grids)) {
     const grid = grids[lane].getBoundingClientRect()
-    const noteW = 150, noteH = 44, gap = 5
-    const cols = Math.max(1, Math.floor(grid.width / (noteW + gap)))
+    const cols = Math.max(1, Math.floor((grid.width + GAP) / (NOTE_W + GAP)))
+    const rows = Math.max(1, Math.floor((grid.height + GAP) / (NOTE_H + GAP)))
+    layout[lane] = { grid, cols, cap: cols * rows }
+  }
+
+  function slotXY(lane) {
+    const { grid, cols } = layout[lane]
     const k = placed[lane]
     const col = k % cols
     const row = (k / cols) | 0
+    const usable = grid.width - cols * NOTE_W - (cols - 1) * GAP
     return {
-      x: grid.left - boardRect.left + col * (noteW + gap),
-      y: grid.top - boardRect.top + row * (noteH + gap),
-      overflow: (row + 1) * (noteH + gap) > grid.height - noteH,
+      x: grid.left - boardRect.left + usable / 2 + col * (NOTE_W + GAP),
+      y: grid.top - boardRect.top + row * (NOTE_H + GAP),
     }
   }
 
@@ -125,7 +132,7 @@ async function runSort() {
     badge.className = `n-badge ${lane}`
     note.classList.add('sorted', `is-${lane}`)
 
-    if (placed[lane] < CAP[lane]) {
+    if (placed[lane] < layout[lane].cap) {
       const { x, y } = slotXY(lane)
       placed[lane] += 1
       note.style.transition = 'left .5s cubic-bezier(.2,.85,.3,1), top .5s cubic-bezier(.2,.85,.3,1), transform .5s ease'
